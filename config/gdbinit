@@ -1,0 +1,11 @@
+define init-pwndbg
+  source /opt/pwndbg/gdbinit.py
+end
+
+define init-gef
+  source /opt/gef/gef.py
+end
+
+define init-peda
+  source /opt/peda/peda.py
+end

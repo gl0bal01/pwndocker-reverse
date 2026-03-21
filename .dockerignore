@@ -1,0 +1,11 @@
+.git
+*.md
+docs/
+LICENSE
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+*.secret
+docker-compose*.yml

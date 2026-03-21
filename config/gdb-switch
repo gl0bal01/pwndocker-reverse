@@ -1,0 +1,9 @@
+#!/bin/bash
+# gdb-switch — set default GDB plugin
+case "$1" in
+    pwndbg) echo -e "source /etc/gdb/gdbinit.d/init-plugins\ninit-pwndbg" > ~/.gdbinit ;;
+    gef)    echo -e "source /etc/gdb/gdbinit.d/init-plugins\ninit-gef" > ~/.gdbinit ;;
+    peda)   echo -e "source /etc/gdb/gdbinit.d/init-plugins\ninit-peda" > ~/.gdbinit ;;
+    *)      echo "Usage: gdb-switch {pwndbg|gef|peda}"; exit 1 ;;
+esac
+echo "Default GDB plugin set to $1"

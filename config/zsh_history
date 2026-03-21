@@ -1,0 +1,97 @@
+# === Reconnaissance & Analysis ===
+checksec --file=./binary
+file ./binary
+strings -n 8 ./binary
+strings -e l ./binary
+readelf -a ./binary
+readelf -s ./binary
+readelf -r ./binary
+objdump -d -M intel ./binary
+objdump -d -j .plt -M intel ./binary
+xxd ./binary | head -50
+hexedit ./binary
+binwalk ./binary
+binwalk -e ./binary
+yara rules.yar ./binary
+nm -D ./binary
+
+# === Disassemblers & Decompilers ===
+r2 -A ./binary
+r2 -A -d ./binary
+rizin -A ./binary
+ghidra
+cutter ./binary
+retdec-decompiler ./binary
+retdec-decompiler --select-functions main ./binary
+ida64 ./binary
+binaryninja ./binary
+jd-gui ./app.jar
+pycdc ./script.pyc
+pycdas ./script.pyc
+wasm2wat ./module.wasm
+wat2wasm ./module.wat
+wasm-objdump -d ./module.wasm
+
+# === GDB / Debugging ===
+gdb-pwndbg ./binary
+gdb-gef ./binary
+gdb-peda ./binary
+gdb-switch pwndbg
+gdb-multiarch -q ./binary
+strace -f ./binary
+strace -e trace=network ./binary
+ltrace ./binary
+
+# === Exploit Development ===
+ROPgadget --binary ./binary --ropchain
+ROPgadget --binary ./binary --string "/bin/sh"
+ROPgadget --binary ./binary --only "pop|ret"
+ropper --file ./binary --search "pop rdi"
+ropper --file ./binary --chain execve
+one_gadget ./libc.so.6
+one_gadget -l 2 ./libc.so.6
+seccomp-tools dump ./binary
+seccomp-tools disasm ./binary
+
+# === Pwntools ===
+python3 -c "from pwn import *; p = process('./binary')"
+python3 -c "from pwn import *; p = remote('host', 1337)"
+python3 -c "from pwn import *; e = ELF('./binary'); print(hex(e.symbols['main']))"
+python3 -c "from pwn import *; rop = ROP('./binary'); print(rop.dump())"
+python3 -c "from pwn import *; context.arch='amd64'; print(shellcraft.sh())"
+pwn checksec ./binary
+pwn cyclic 200
+pwn cyclic -l 0x61616166
+
+# === Patching & Libc ===
+pwninit --bin ./binary --libc ./libc.so.6
+patchelf --set-interpreter ./ld-linux-x86-64.so.2 --set-rpath . ./binary
+patchelf --print-needed ./binary
+patchelf --replace-needed libc.so.6 ./libc.so.6 ./binary
+libc-find d8 e9 31 60
+libc-identify ./libc.so.6
+libc-dump ./libc.so.6 system __free_hook
+
+# === Dynamic Instrumentation ===
+frida -f ./binary -l script.js
+frida-trace -f ./binary -i "malloc"
+frida-ps -U
+villoc /tmp/ltrace.out > heap.html
+
+# === Fuzzing ===
+afl-fuzz -i input/ -o output/ -- ./binary @@
+afl-fuzz -i input/ -o output/ -m none -- ./binary @@
+afl-cmin -i input/ -o input_min/ -- ./binary @@
+afl-tmin -i crash -o crash_min -- ./binary @@
+
+# === Networking ===
+socat TCP-LISTEN:1337,reuseaddr,fork EXEC:./binary
+socat TCP-LISTEN:1337,reuseaddr,fork EXEC:"./binary",pty,stderr
+ncat -lvp 1337
+ncat -e /bin/sh host 1337
+tcpdump -i any -w capture.pcap
+tshark -r capture.pcap
+
+# === Emulation ===
+qemu-user -L /usr/arm-linux-gnueabihf ./binary
+qemu-user -g 1234 ./binary
