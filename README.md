@@ -35,6 +35,32 @@ docker build --build-arg CTF_UID=$(id -u) --build-arg CTF_GID=$(id -g) -t pwndoc
 
 You land in `/ctf` as user `ctf` with sudo, oh-my-zsh, and 97 pre-loaded history entries searchable via Ctrl+R.
 
+## Reproducibility & Verification
+
+The image is **rebuilt every Monday** from `master` so `latest` stays fresh against upstream tool releases. Three ways to consume it:
+
+```bash
+# Rolling (weekly fresh) — convenient, not reproducible
+docker pull ghcr.io/gl0bal01/pwndocker-reverse:latest
+
+# Dated weekly snapshot — fresh but frozen, good for a CTF weekend
+docker pull ghcr.io/gl0bal01/pwndocker-reverse:weekly-20260406
+
+# Immutable digest — fully reproducible, pin this in team setups / scripts
+docker pull ghcr.io/gl0bal01/pwndocker-reverse@sha256:<digest>
+```
+
+Every pushed image is signed with [cosign](https://github.com/sigstore/cosign) (keyless, via GitHub OIDC) and ships with an SBOM + SLSA provenance attestation. Verify before running in sensitive contexts:
+
+```bash
+cosign verify ghcr.io/gl0bal01/pwndocker-reverse:latest \
+  --certificate-identity-regexp 'https://github.com/gl0bal01/pwndocker-reverse/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# Inspect the SBOM
+docker buildx imagetools inspect ghcr.io/gl0bal01/pwndocker-reverse:latest --format '{{ json .SBOM }}'
+```
+
 ## Tools
 
 | Category | Tools |

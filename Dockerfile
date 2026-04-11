@@ -8,6 +8,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIPX_BIN_DIR=/usr/local/bin \
     PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
+SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
+
 # Layer 1: System packages
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
@@ -47,19 +49,23 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && pipx install frida-tools \
     && pipx install unblob
 
-# Layer 5: Python tools (pip/manual)
+# Layer 5: Python tools (pipx/manual)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --break-system-packages binwalk
+    pipx install binwalk
 
 RUN git clone --depth=1 https://github.com/blackploit/hash-identifier /opt/hash-identifier \
     && ln -s /opt/hash-identifier/hash-id.py /usr/local/bin/hash-identifier \
     && chmod +x /opt/hash-identifier/hash-id.py
 
 RUN --mount=type=secret,id=github_token \
-    curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/opengrep/opengrep/releases/latest \
-    | jq -r '.assets[] | select(.name == "opengrep_manylinux_x86") | .browser_download_url' \
-    | head -1 | xargs wget -qO /usr/local/bin/opengrep \
-    && chmod +x /usr/local/bin/opengrep
+    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
+    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/opengrep/opengrep/releases/latest \
+        | jq -er '.assets[] | select(.name == "opengrep_manylinux_x86") | .browser_download_url' | head -1); \
+    [ -n "$url" ] || { echo "ERROR: opengrep asset URL not found"; exit 1; }; \
+    wget -qO /usr/local/bin/opengrep "$url"; \
+    [ -s /usr/local/bin/opengrep ] || { echo "ERROR: opengrep download empty"; exit 1; }; \
+    chmod +x /usr/local/bin/opengrep; \
+    /usr/local/bin/opengrep --version >/dev/null || { echo "ERROR: opengrep binary invalid"; exit 1; }
 
 # Layer 6: Ruby tools
 RUN gem install one_gadget seccomp-tools
@@ -95,74 +101,99 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Cutter (rizin GUI) — extracted AppImage for Docker compatibility
 RUN --mount=type=secret,id=github_token \
-    curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/rizinorg/cutter/releases/latest \
-    | jq -r '.assets[] | select(.name | test("Linux-x86_64\\.AppImage$")) | .browser_download_url' \
-    | head -1 | xargs wget -qO /tmp/cutter.AppImage \
-    && chmod +x /tmp/cutter.AppImage \
-    && cd /tmp && ./cutter.AppImage --appimage-extract \
-    && mv squashfs-root /opt/cutter \
-    && ln -s /opt/cutter/AppRun /usr/local/bin/cutter \
-    && rm /tmp/cutter.AppImage
+    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
+    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/rizinorg/cutter/releases/latest \
+        | jq -er '.assets[] | select(.name | test("Linux-x86_64\\.AppImage$")) | .browser_download_url' | head -1); \
+    [ -n "$url" ] || { echo "ERROR: Cutter asset URL not found"; exit 1; }; \
+    wget -qO /tmp/cutter.AppImage "$url"; \
+    [ -s /tmp/cutter.AppImage ] || { echo "ERROR: Cutter download empty"; exit 1; }; \
+    file /tmp/cutter.AppImage | grep -q ELF || { echo "ERROR: Cutter not an ELF"; exit 1; }; \
+    chmod +x /tmp/cutter.AppImage; \
+    cd /tmp && ./cutter.AppImage --appimage-extract; \
+    mv squashfs-root /opt/cutter; \
+    ln -s /opt/cutter/AppRun /usr/local/bin/cutter; \
+    rm /tmp/cutter.AppImage
 
 # Ghidra (platform-independent zip)
 RUN --mount=type=secret,id=github_token \
-    curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest \
-    | jq -r '.assets[] | select(.name | endswith(".zip")) | select(.name | test("PUBLIC")) | .browser_download_url' \
-    | head -1 | xargs wget -qO /tmp/ghidra.zip \
-    && unzip /tmp/ghidra.zip -d /opt \
-    && mv /opt/ghidra_* /opt/ghidra \
-    && ln -s /opt/ghidra/ghidraRun /usr/local/bin/ghidra \
-    && rm /tmp/ghidra.zip
+    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
+    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest \
+        | jq -er '.assets[] | select(.name | endswith(".zip")) | select(.name | test("PUBLIC")) | .browser_download_url' | head -1); \
+    [ -n "$url" ] || { echo "ERROR: Ghidra asset URL not found"; exit 1; }; \
+    wget -qO /tmp/ghidra.zip "$url"; \
+    [ -s /tmp/ghidra.zip ] || { echo "ERROR: Ghidra download empty"; exit 1; }; \
+    unzip -tq /tmp/ghidra.zip || { echo "ERROR: Ghidra zip corrupt"; exit 1; }; \
+    unzip -q /tmp/ghidra.zip -d /opt; \
+    mv /opt/ghidra_* /opt/ghidra; \
+    ln -s /opt/ghidra/ghidraRun /usr/local/bin/ghidra; \
+    rm /tmp/ghidra.zip
 
 # retdec (pre-built, no wrapper dir in archive)
 RUN --mount=type=secret,id=github_token \
-    mkdir -p /opt/retdec \
-    && curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/avast/retdec/releases/latest \
-    | jq -r '.assets[] | select(.name | test("[Ll]inux.*tar")) | .browser_download_url' \
-    | head -1 | xargs wget -qO /tmp/retdec.tar.xz \
-    && tar xf /tmp/retdec.tar.xz -C /opt/retdec \
-    && ln -s /opt/retdec/bin/* /usr/local/bin/ \
-    && rm /tmp/retdec.tar.xz
+    mkdir -p /opt/retdec; \
+    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
+    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/avast/retdec/releases/latest \
+        | jq -er '.assets[] | select(.name | test("[Ll]inux.*tar")) | .browser_download_url' | head -1); \
+    [ -n "$url" ] || { echo "ERROR: retdec asset URL not found"; exit 1; }; \
+    wget -qO /tmp/retdec.tar.xz "$url"; \
+    [ -s /tmp/retdec.tar.xz ] || { echo "ERROR: retdec download empty"; exit 1; }; \
+    tar tf /tmp/retdec.tar.xz >/dev/null || { echo "ERROR: retdec archive corrupt"; exit 1; }; \
+    tar xf /tmp/retdec.tar.xz -C /opt/retdec; \
+    ln -s /opt/retdec/bin/* /usr/local/bin/; \
+    rm /tmp/retdec.tar.xz
 
 # IDA Free (Wayback archive — original URL removed by Hex-Rays)
-RUN wget -qO /tmp/idafree_linux.run "https://web.archive.org/web/20240921184600if_/https://out7.hex-rays.com/files/idafree84_linux.run" \
-    && chmod +x /tmp/idafree_linux.run \
-    && /tmp/idafree_linux.run --mode unattended --prefix /opt/idafree \
-    && ln -s /opt/idafree/ida64 /usr/local/bin/ida64 \
-    && rm /tmp/idafree_linux.run
+RUN wget -qO /tmp/idafree_linux.run "https://web.archive.org/web/20240921184600if_/https://out7.hex-rays.com/files/idafree84_linux.run"; \
+    [ -s /tmp/idafree_linux.run ] || { echo "ERROR: IDA Free download empty (Wayback may be unavailable)"; exit 1; }; \
+    head -c4 /tmp/idafree_linux.run | grep -q '^.ELF' || [ "$(stat -c%s /tmp/idafree_linux.run)" -gt 10000000 ] || { echo "ERROR: IDA Free installer looks invalid"; exit 1; }; \
+    chmod +x /tmp/idafree_linux.run; \
+    /tmp/idafree_linux.run --mode unattended --prefix /opt/idafree; \
+    ln -s /opt/idafree/ida64 /usr/local/bin/ida64; \
+    rm /tmp/idafree_linux.run
 
 # Binary Ninja Free
-RUN wget -qO /tmp/binaryninja_free.zip "https://cdn.binary.ninja/installers/binaryninja_free_linux.zip" \
-    && unzip /tmp/binaryninja_free.zip -d /opt \
-    && ln -s /opt/binaryninja/binaryninja /usr/local/bin/binaryninja \
-    && rm /tmp/binaryninja_free.zip
+RUN wget -qO /tmp/binaryninja_free.zip "https://cdn.binary.ninja/installers/binaryninja_free_linux.zip"; \
+    [ -s /tmp/binaryninja_free.zip ] || { echo "ERROR: Binary Ninja download empty"; exit 1; }; \
+    unzip -tq /tmp/binaryninja_free.zip || { echo "ERROR: Binary Ninja zip corrupt"; exit 1; }; \
+    unzip -q /tmp/binaryninja_free.zip -d /opt; \
+    ln -s /opt/binaryninja/binaryninja /usr/local/bin/binaryninja; \
+    rm /tmp/binaryninja_free.zip
 
 # ImHex (hex editor for RE)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     --mount=type=secret,id=github_token \
-    curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/WerWolv/ImHex/releases/latest \
-    | jq -r '.assets[] | select(.name | test("Ubuntu.*24\\.04.*\\.deb$")) | .browser_download_url' \
-    | head -1 | xargs wget -qO /tmp/imhex.deb \
-    && apt-get update && apt-get install -y --no-install-recommends /tmp/imhex.deb \
-    && rm /tmp/imhex.deb
+    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
+    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/WerWolv/ImHex/releases/latest \
+        | jq -er '.assets[] | select(.name | test("Ubuntu.*24\\.04.*\\.deb$")) | .browser_download_url' | head -1); \
+    [ -n "$url" ] || { echo "ERROR: ImHex asset URL not found"; exit 1; }; \
+    wget -qO /tmp/imhex.deb "$url"; \
+    [ -s /tmp/imhex.deb ] || { echo "ERROR: ImHex download empty"; exit 1; }; \
+    dpkg-deb -I /tmp/imhex.deb >/dev/null || { echo "ERROR: ImHex deb corrupt"; exit 1; }; \
+    apt-get update && apt-get install -y --no-install-recommends /tmp/imhex.deb; \
+    rm /tmp/imhex.deb
 
 # pycdc (pre-built from decompyle-builds)
 RUN --mount=type=secret,id=github_token \
-    curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/extremecoders-re/decompyle-builds/releases/latest \
-    | jq -r '.assets[] | select(.name == "pycdc.x86_64") | .browser_download_url' \
-    | head -1 | xargs wget -qO /usr/local/bin/pycdc \
-    && curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/extremecoders-re/decompyle-builds/releases/latest \
-    | jq -r '.assets[] | select(.name == "pycdas.x86_64") | .browser_download_url' \
-    | head -1 | xargs wget -qO /usr/local/bin/pycdas \
-    && chmod +x /usr/local/bin/pycdc /usr/local/bin/pycdas
+    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
+    meta=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/extremecoders-re/decompyle-builds/releases/latest); \
+    url_pycdc=$(echo "$meta" | jq -er '.assets[] | select(.name == "pycdc.x86_64") | .browser_download_url' | head -1); \
+    url_pycdas=$(echo "$meta" | jq -er '.assets[] | select(.name == "pycdas.x86_64") | .browser_download_url' | head -1); \
+    [ -n "$url_pycdc" ] && [ -n "$url_pycdas" ] || { echo "ERROR: pycdc/pycdas asset URLs not found"; exit 1; }; \
+    wget -qO /usr/local/bin/pycdc "$url_pycdc"; \
+    wget -qO /usr/local/bin/pycdas "$url_pycdas"; \
+    [ -s /usr/local/bin/pycdc ] && [ -s /usr/local/bin/pycdas ] || { echo "ERROR: pycdc/pycdas download empty"; exit 1; }; \
+    file /usr/local/bin/pycdc | grep -q ELF || { echo "ERROR: pycdc not an ELF"; exit 1; }; \
+    chmod +x /usr/local/bin/pycdc /usr/local/bin/pycdas
 
-# jd-gui (Java decompiler)
+# jd-gui (Java decompiler — pinned URL, validates Java archive)
 COPY config/jd-gui /usr/local/bin/jd-gui
-RUN mkdir -p /opt/jd-gui \
-    && wget -qO /opt/jd-gui/jd-gui.jar \
-       "https://github.com/java-decompiler/jd-gui/releases/download/v1.6.6/jd-gui-1.6.6.jar" \
-    && chmod +x /usr/local/bin/jd-gui
+RUN mkdir -p /opt/jd-gui; \
+    wget -qO /opt/jd-gui/jd-gui.jar \
+       "https://github.com/java-decompiler/jd-gui/releases/download/v1.6.6/jd-gui-1.6.6.jar"; \
+    [ -s /opt/jd-gui/jd-gui.jar ] || { echo "ERROR: jd-gui download empty"; exit 1; }; \
+    unzip -tq /opt/jd-gui/jd-gui.jar >/dev/null || { echo "ERROR: jd-gui jar corrupt"; exit 1; }; \
+    chmod +x /usr/local/bin/jd-gui
 
 # Layer 9: Fuzzing & Dynamic Analysis
 
@@ -186,15 +217,20 @@ RUN git clone --depth=1 https://github.com/niklasb/libc-database /opt/libc-datab
 
 # pwninit
 RUN --mount=type=secret,id=github_token \
-    curl -s -H "Authorization: token $(cat /run/secrets/github_token 2>/dev/null || true)" https://api.github.com/repos/io12/pwninit/releases/latest \
-    | jq -r '.assets[] | select(.name == "pwninit") | .browser_download_url' \
-    | head -1 | xargs wget -qO /usr/local/bin/pwninit \
-    && chmod +x /usr/local/bin/pwninit
+    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
+    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/io12/pwninit/releases/latest \
+        | jq -er '.assets[] | select(.name == "pwninit") | .browser_download_url' | head -1); \
+    [ -n "$url" ] || { echo "ERROR: pwninit asset URL not found"; exit 1; }; \
+    wget -qO /usr/local/bin/pwninit "$url"; \
+    [ -s /usr/local/bin/pwninit ] || { echo "ERROR: pwninit download empty"; exit 1; }; \
+    file /usr/local/bin/pwninit | grep -q ELF || { echo "ERROR: pwninit not an ELF"; exit 1; }; \
+    chmod +x /usr/local/bin/pwninit
 
 # Layer 11: User Setup & Shell
 ARG CTF_UID=1000
 ARG CTF_GID=1000
-RUN userdel -r ubuntu 2>/dev/null; groupdel ubuntu 2>/dev/null; true \
+RUN { userdel -r ubuntu 2>/dev/null || true; } \
+    && { groupdel ubuntu 2>/dev/null || true; } \
     && groupadd -f -g ${CTF_GID} ctf \
     && useradd -m -s /bin/zsh -u ${CTF_UID} -g ${CTF_GID} -G sudo ctf \
     && echo "ctf ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \

@@ -6,9 +6,15 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main, master]
+  schedule:
+    # Weekly rebuild (Mondays 06:00 UTC) so upstream breakage surfaces in CI
+    # instead of when a user tries to pull latest.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 env:
   IMAGE_NAME: pwndocker-reverse
+  REGISTRY: ghcr.io
 
 jobs:
   build:
@@ -16,6 +22,12 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
+
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      tags: ${{ steps.meta.outputs.tags }}
 
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +39,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -35,34 +47,75 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=schedule,pattern=weekly-{{date 'YYYYMMDD'}}
             type=semver,pattern={{version}}
             type=sha,prefix=
+          labels: |
+            org.opencontainers.image.title=pwndocker-reverse
+            org.opencontainers.image.description=CTF pwn/reverse-engineering Docker image
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
 
-      - name: Build and push
+      # Build once into the local docker daemon so we can smoke test BEFORE
+      # pushing. The second "push" build below is a cache hit and runs in seconds.
+      - name: Build (local load for smoke test)
+        id: build_local
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          load: true
+          tags: smoke-test:local
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Smoke test
-        if: github.event_name == 'pull_request'
         run: |
-          docker build -t test-image .
-          docker run --rm test-image bash -c "\
-            which pwn && \
-            which gdb-pwndbg && \
-            which r2 && \
-            which ghidra && \
-            which ROPgadget && \
-            which afl-fuzz && \
-            which frida && \
-            echo 'Smoke test passed'"
+          set -euo pipefail
+          docker run --rm smoke-test:local bash -c '
+            set -eo pipefail
+            for bin in pwn gdb-pwndbg gdb-gef gdb-peda r2 rizin ghidra \
+                       ROPgadget ropper afl-fuzz frida one_gadget \
+                       opengrep pwninit cutter ida64 binaryninja \
+                       pycdc jd-gui binwalk; do
+              command -v "$bin" >/dev/null || { echo "MISSING: $bin"; exit 1; }
+            done
+            echo "Smoke test passed"
+          '
+
+      # Only pushes after smoke test succeeds. Cache hit from build_local means
+      # this is near-instant even though build-push-action re-runs buildx.
+      - name: Push to GHCR
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          sbom: true
+          provenance: mode=max
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image with cosign (keyless)
+        if: github.event_name != 'pull_request'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          for tag in $TAGS; do
+            cosign sign --yes "${tag}@${DIGEST}"
+          done
