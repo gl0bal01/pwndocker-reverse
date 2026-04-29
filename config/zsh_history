@@ -93,5 +93,5 @@ tcpdump -i any -w capture.pcap
 tshark -r capture.pcap
 
 # === Emulation ===
-qemu-user -L /usr/arm-linux-gnueabihf ./binary
-qemu-user -g 1234 ./binary
+qemu-arm -L /usr/arm-linux-gnueabihf ./arm_binary
+qemu-aarch64 -g 1234 -L /usr/aarch64-linux-gnu ./aarch64_binary

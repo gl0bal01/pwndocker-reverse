@@ -31,3 +31,6 @@ venv/
 *.tar.gz
 *.tar.xz
 *.zip
+
+# oh-my-claudecode workspace
+.omc/

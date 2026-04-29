@@ -1,2 +1,2 @@
 #!/bin/bash
-exec gdb -q -x /etc/gdb/gdbinit.d/init-plugins -ex init-pwndbg "$@"
+exec gdb -q -nx -x /etc/gdb/gdbinit.d/init-plugins -ex init-pwndbg "$@"

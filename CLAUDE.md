@@ -28,7 +28,7 @@ Single `Dockerfile` with 13 logical layers, organized by purpose:
 
 | Layer | Contents |
 |---|---|
-| 1. Base | Ubuntu 24.04, system deps, multilib, X11/GL, JDK 21, QEMU user-mode, wabt, neovim, upx, p7zip |
+| 1. Base | Ubuntu 24.04, system deps, multilib, X11/GL, JDK 21, QEMU user-mode + arm/aarch64 cross-libc sysroots, wabt, neovim, upx, p7zip |
 | 2-4. Python | pwntools, angr, qiling, ropper, ROPgadget, binary-refinery, frida-tools, unblob (pipx). Libraries (capstone, keystone, unicorn, z3, yara, r2pipe) injected into pwntools venv |
 | 5. Pip/Manual | binwalk, hash-identifier, opengrep |
 | 6. Ruby | one_gadget, seccomp-tools |
@@ -60,3 +60,4 @@ Single `Dockerfile` with 13 logical layers, organized by purpose:
 - **`CTF_UID`/`CTF_GID` build args** — default 1000 to match most Linux hosts; avoids X11 socket permission issues
 - **`openjdk-21-jdk` (not headless)** — Ghidra needs AWT/Swing for its GUI
 - **`--cap-add=SYS_PTRACE`** — required at runtime for GDB to attach to processes
+- **`libc6-{armhf,arm64}-cross` baked in** — provides `/usr/arm-linux-gnueabihf` and `/usr/aarch64-linux-gnu` sysroots for `qemu-user -L`. Avoids per-container `apt-get` (broken in air-gapped CTF env) at ~50-80 MB cost

@@ -33,7 +33,7 @@ docker run -it --rm --cap-add=SYS_PTRACE \
 docker build --build-arg CTF_UID=$(id -u) --build-arg CTF_GID=$(id -g) -t pwndocker-reverse .
 ```
 
-You land in `/ctf` as user `ctf` with sudo, oh-my-zsh, and 97 pre-loaded history entries searchable via Ctrl+R.
+You land in `/ctf` as user `ctf` with sudo, oh-my-zsh, and 78 pre-loaded history entries searchable via Ctrl+R.
 
 ## Reproducibility & Verification
 
@@ -44,7 +44,7 @@ The image is **rebuilt every Monday** from `master` so `latest` stays fresh agai
 docker pull ghcr.io/gl0bal01/pwndocker-reverse:latest
 
 # Dated weekly snapshot — fresh but frozen, good for a CTF weekend
-docker pull ghcr.io/gl0bal01/pwndocker-reverse:weekly-20260406
+docker pull ghcr.io/gl0bal01/pwndocker-reverse:weekly-20260427    # replace with latest weekly-YYYYMMDD tag
 
 # Immutable digest — fully reproducible, pin this in team setups / scripts
 docker pull ghcr.io/gl0bal01/pwndocker-reverse@sha256:<digest>
@@ -76,7 +76,7 @@ docker buildx imagetools inspect ghcr.io/gl0bal01/pwndocker-reverse:latest --for
 | **Analysis** | binary-refinery, opengrep, hash-identifier |
 | **Networking** | socat, ncat, tcpdump, tshark, nmap |
 | **Editors** | vim, neovim |
-| **System** | QEMU user-mode, wabt, gdb-multiarch, p7zip, oh-my-zsh |
+| **System** | QEMU user-mode (+ arm/aarch64 cross-libc sysroots), wabt, gdb-multiarch, p7zip, oh-my-zsh |
 
 ## Usage
 
@@ -176,9 +176,19 @@ libc-dump ./libc.so.6 system __free_hook
 
 ### Emulation
 
+ARM and AARCH64 cross-libc sysroots are pre-installed, so dynamic binaries run out of the box.
+
 ```bash
-qemu-user -L /usr/arm-linux-gnueabihf ./arm_binary
-qemu-user -g 1234 ./binary    # start with GDB server on port 1234
+# Static binaries: no sysroot needed
+qemu-arm ./arm_static_binary
+qemu-aarch64 ./aarch64_static_binary
+
+# Dynamic binaries: -L points at the cross-libc sysroot baked into the image
+qemu-arm     -L /usr/arm-linux-gnueabihf ./arm_binary
+qemu-aarch64 -L /usr/aarch64-linux-gnu   ./aarch64_binary
+
+# Run under GDB server on :1234, then attach with `gdb-multiarch -ex 'target remote :1234'`
+qemu-aarch64 -g 1234 -L /usr/aarch64-linux-gnu ./aarch64_binary
 ```
 
 ### Networking
@@ -192,7 +202,7 @@ tshark -r capture.pcap                                  # analyze pcap
 
 ## Pre-Populated History
 
-Hit Ctrl+R and search. 97 commands covering all installed tools are already in your history -- no need to remember syntax.
+Hit Ctrl+R and search. 78 commands covering all installed tools are already in your history -- no need to remember syntax.
 
 ## Project Structure
 

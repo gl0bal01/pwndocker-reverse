@@ -1,2 +1,2 @@
 #!/bin/bash
-exec gdb -q -x /etc/gdb/gdbinit.d/init-plugins -ex init-peda "$@"
+exec gdb -q -nx -x /etc/gdb/gdbinit.d/init-plugins -ex init-peda "$@"

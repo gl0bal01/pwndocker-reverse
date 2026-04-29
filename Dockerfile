@@ -27,6 +27,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libxkbcommon-x11-0 libxkbcommon0 \
         openjdk-21-jdk \
         qemu-user qemu-user-static \
+        libc6-armhf-cross libc6-arm64-cross \
         llvm clang lld \
         python3 python3-dev python3-pip python3-venv pipx \
         ruby-dev
@@ -59,7 +60,8 @@ RUN git clone --depth=1 https://github.com/blackploit/hash-identifier /opt/hash-
 
 RUN --mount=type=secret,id=github_token \
     tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/opengrep/opengrep/releases/latest \
+    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
+    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/opengrep/opengrep/releases/latest \
         | jq -er '.assets[] | select(.name == "opengrep_manylinux_x86") | .browser_download_url' | head -1); \
     [ -n "$url" ] || { echo "ERROR: opengrep asset URL not found"; exit 1; }; \
     wget -qO /usr/local/bin/opengrep "$url"; \
@@ -102,7 +104,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Cutter (rizin GUI) — extracted AppImage for Docker compatibility
 RUN --mount=type=secret,id=github_token \
     tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/rizinorg/cutter/releases/latest \
+    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
+    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/rizinorg/cutter/releases/latest \
         | jq -er '.assets[] | select(.name | test("Linux-x86_64\\.AppImage$")) | .browser_download_url' | head -1); \
     [ -n "$url" ] || { echo "ERROR: Cutter asset URL not found"; exit 1; }; \
     wget -qO /tmp/cutter.AppImage "$url"; \
@@ -117,7 +120,8 @@ RUN --mount=type=secret,id=github_token \
 # Ghidra (platform-independent zip)
 RUN --mount=type=secret,id=github_token \
     tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest \
+    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
+    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest \
         | jq -er '.assets[] | select(.name | endswith(".zip")) | select(.name | test("PUBLIC")) | .browser_download_url' | head -1); \
     [ -n "$url" ] || { echo "ERROR: Ghidra asset URL not found"; exit 1; }; \
     wget -qO /tmp/ghidra.zip "$url"; \
@@ -132,7 +136,8 @@ RUN --mount=type=secret,id=github_token \
 RUN --mount=type=secret,id=github_token \
     mkdir -p /opt/retdec; \
     tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/avast/retdec/releases/latest \
+    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
+    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/avast/retdec/releases/latest \
         | jq -er '.assets[] | select(.name | test("[Ll]inux.*tar")) | .browser_download_url' | head -1); \
     [ -n "$url" ] || { echo "ERROR: retdec asset URL not found"; exit 1; }; \
     wget -qO /tmp/retdec.tar.xz "$url"; \
@@ -164,7 +169,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     --mount=type=secret,id=github_token \
     tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/WerWolv/ImHex/releases/latest \
+    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
+    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/WerWolv/ImHex/releases/latest \
         | jq -er '.assets[] | select(.name | test("Ubuntu.*24\\.04.*\\.deb$")) | .browser_download_url' | head -1); \
     [ -n "$url" ] || { echo "ERROR: ImHex asset URL not found"; exit 1; }; \
     wget -qO /tmp/imhex.deb "$url"; \
@@ -176,7 +182,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # pycdc (pre-built from decompyle-builds)
 RUN --mount=type=secret,id=github_token \
     tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    meta=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/extremecoders-re/decompyle-builds/releases/latest); \
+    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
+    meta=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/extremecoders-re/decompyle-builds/releases/latest); \
     url_pycdc=$(echo "$meta" | jq -er '.assets[] | select(.name == "pycdc.x86_64") | .browser_download_url' | head -1); \
     url_pycdas=$(echo "$meta" | jq -er '.assets[] | select(.name == "pycdas.x86_64") | .browser_download_url' | head -1); \
     [ -n "$url_pycdc" ] && [ -n "$url_pycdas" ] || { echo "ERROR: pycdc/pycdas asset URLs not found"; exit 1; }; \
@@ -218,7 +225,8 @@ RUN git clone --depth=1 https://github.com/niklasb/libc-database /opt/libc-datab
 # pwninit
 RUN --mount=type=secret,id=github_token \
     tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    url=$(curl -fsSL -H "Authorization: token ${tok}" https://api.github.com/repos/io12/pwninit/releases/latest \
+    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
+    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/io12/pwninit/releases/latest \
         | jq -er '.assets[] | select(.name == "pwninit") | .browser_download_url' | head -1); \
     [ -n "$url" ] || { echo "ERROR: pwninit asset URL not found"; exit 1; }; \
     wget -qO /usr/local/bin/pwninit "$url"; \
