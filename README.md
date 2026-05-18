@@ -213,7 +213,7 @@ This image is built for **local CTF use**, not for hosting as a shared service. 
 - **GDB plugins (pwndbg, GEF, PEDA) and a few other git-cloned tools track the latest default branch.** This keeps the image fresh as CTF tooling evolves; the **weekly CI rebuild + smoke test** catches upstream breakage. The remaining risk is a malicious upstream commit shipping straight into a rebuild — pin a specific image digest (see *Reproducibility & Verification* above) if that's a concern.
 - **IDA Free is fetched from a Wayback Machine snapshot** because Hex-Rays removed v8.4 from their CDN. The build validates that the downloaded blob is an ELF executable of plausible size, but cannot SHA-pin without access to the original asset. If the snapshot ever disappears the build fails loudly rather than silently producing a broken image.
 
-CI runs **Trivy** against every build (fails on HIGH/CRITICAL OS/library CVEs with fixes available) and **shellcheck** on every shipped shell script, so regressions in either dimension block the push.
+CI runs **Trivy** against every build (fails on CRITICAL OS CVEs with a known fix) and **shellcheck** on every shipped shell script, so regressions in either dimension block the push. The Trivy gate is narrow on purpose — see `.github/workflows/build.yml` for the rationale.
 
 ## Project Structure
 
