@@ -1,5 +1,5 @@
 # === Reconnaissance & Analysis ===
-checksec --file=./binary
+pwn checksec ./binary
 file ./binary
 strings -n 8 ./binary
 strings -e l ./binary

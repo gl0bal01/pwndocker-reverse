@@ -58,14 +58,14 @@ RUN git clone --depth=1 https://github.com/blackploit/hash-identifier /opt/hash-
     && ln -s /opt/hash-identifier/hash-id.py /usr/local/bin/hash-identifier \
     && chmod +x /opt/hash-identifier/hash-id.py
 
+# Helper script shared by GitHub release downloads (see config/fetch-gh-release.sh)
+COPY config/fetch-gh-release.sh /usr/local/bin/fetch-gh-release.sh
+RUN chmod +x /usr/local/bin/fetch-gh-release.sh
+
 RUN --mount=type=secret,id=github_token \
-    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
-    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/opengrep/opengrep/releases/latest \
-        | jq -er '.assets[] | select(.name == "opengrep_manylinux_x86") | .browser_download_url' | head -1); \
-    [ -n "$url" ] || { echo "ERROR: opengrep asset URL not found"; exit 1; }; \
-    wget -qO /usr/local/bin/opengrep "$url"; \
-    [ -s /usr/local/bin/opengrep ] || { echo "ERROR: opengrep download empty"; exit 1; }; \
+    fetch-gh-release.sh opengrep/opengrep \
+        '.assets[] | select(.name == "opengrep_manylinux_x86") | .browser_download_url' \
+        /usr/local/bin/opengrep; \
     chmod +x /usr/local/bin/opengrep; \
     /usr/local/bin/opengrep --version >/dev/null || { echo "ERROR: opengrep binary invalid"; exit 1; }
 
@@ -103,13 +103,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Cutter (rizin GUI) — extracted AppImage for Docker compatibility
 RUN --mount=type=secret,id=github_token \
-    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
-    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/rizinorg/cutter/releases/latest \
-        | jq -er '.assets[] | select(.name | test("Linux-x86_64\\.AppImage$")) | .browser_download_url' | head -1); \
-    [ -n "$url" ] || { echo "ERROR: Cutter asset URL not found"; exit 1; }; \
-    wget -qO /tmp/cutter.AppImage "$url"; \
-    [ -s /tmp/cutter.AppImage ] || { echo "ERROR: Cutter download empty"; exit 1; }; \
+    fetch-gh-release.sh rizinorg/cutter \
+        '.assets[] | select(.name | test("Linux-x86_64\\.AppImage$")) | .browser_download_url' \
+        /tmp/cutter.AppImage; \
     file /tmp/cutter.AppImage | grep -q ELF || { echo "ERROR: Cutter not an ELF"; exit 1; }; \
     chmod +x /tmp/cutter.AppImage; \
     cd /tmp && ./cutter.AppImage --appimage-extract; \
@@ -119,40 +115,45 @@ RUN --mount=type=secret,id=github_token \
 
 # Ghidra (platform-independent zip)
 RUN --mount=type=secret,id=github_token \
-    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
-    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/NationalSecurityAgency/ghidra/releases/latest \
-        | jq -er '.assets[] | select(.name | endswith(".zip")) | select(.name | test("PUBLIC")) | .browser_download_url' | head -1); \
-    [ -n "$url" ] || { echo "ERROR: Ghidra asset URL not found"; exit 1; }; \
-    wget -qO /tmp/ghidra.zip "$url"; \
-    [ -s /tmp/ghidra.zip ] || { echo "ERROR: Ghidra download empty"; exit 1; }; \
+    fetch-gh-release.sh NationalSecurityAgency/ghidra \
+        '.assets[] | select(.name | endswith(".zip")) | select(.name | test("PUBLIC")) | .browser_download_url' \
+        /tmp/ghidra.zip; \
     unzip -tq /tmp/ghidra.zip || { echo "ERROR: Ghidra zip corrupt"; exit 1; }; \
     unzip -q /tmp/ghidra.zip -d /opt; \
-    mv /opt/ghidra_* /opt/ghidra; \
+    ghidra_dir=$(find /opt -maxdepth 1 -mindepth 1 -type d -name 'ghidra_*' -print -quit); \
+    [ -n "$ghidra_dir" ] || { echo "ERROR: Ghidra extracted dir not found"; exit 1; }; \
+    mv "$ghidra_dir" /opt/ghidra; \
+    [ -x /opt/ghidra/ghidraRun ] || { echo "ERROR: ghidraRun missing or not executable"; exit 1; }; \
     ln -s /opt/ghidra/ghidraRun /usr/local/bin/ghidra; \
     rm /tmp/ghidra.zip
 
-# retdec (pre-built, no wrapper dir in archive)
+# retdec — ships bare binaries in bin/; extract and symlink each into PATH
 RUN --mount=type=secret,id=github_token \
     mkdir -p /opt/retdec; \
-    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
-    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/avast/retdec/releases/latest \
-        | jq -er '.assets[] | select(.name | test("[Ll]inux.*tar")) | .browser_download_url' | head -1); \
-    [ -n "$url" ] || { echo "ERROR: retdec asset URL not found"; exit 1; }; \
-    wget -qO /tmp/retdec.tar.xz "$url"; \
-    [ -s /tmp/retdec.tar.xz ] || { echo "ERROR: retdec download empty"; exit 1; }; \
+    fetch-gh-release.sh avast/retdec \
+        '.assets[] | select(.name | test("[Ll]inux.*tar")) | .browser_download_url' \
+        /tmp/retdec.tar.xz; \
     tar tf /tmp/retdec.tar.xz >/dev/null || { echo "ERROR: retdec archive corrupt"; exit 1; }; \
     tar xf /tmp/retdec.tar.xz -C /opt/retdec; \
-    ln -s /opt/retdec/bin/* /usr/local/bin/; \
+    [ -d /opt/retdec/bin ] || { echo "ERROR: retdec bin/ dir missing"; exit 1; }; \
+    found=0; for f in /opt/retdec/bin/*; do \
+        [ -f "$f" ] && [ -x "$f" ] || continue; \
+        ln -s "$f" "/usr/local/bin/$(basename "$f")"; \
+        found=1; \
+    done; \
+    [ "$found" = "1" ] || { echo "ERROR: no executable retdec binaries to symlink"; exit 1; }; \
     rm /tmp/retdec.tar.xz
 
 # IDA Free (Wayback archive — original URL removed by Hex-Rays)
+# Installer ships as a bare ELF executable. Validate ELF + size so we fail
+# loudly if Wayback returns an HTML error page instead of the binary.
 RUN wget -qO /tmp/idafree_linux.run "https://web.archive.org/web/20240921184600if_/https://out7.hex-rays.com/files/idafree84_linux.run"; \
     [ -s /tmp/idafree_linux.run ] || { echo "ERROR: IDA Free download empty (Wayback may be unavailable)"; exit 1; }; \
-    head -c4 /tmp/idafree_linux.run | grep -q '^.ELF' || [ "$(stat -c%s /tmp/idafree_linux.run)" -gt 10000000 ] || { echo "ERROR: IDA Free installer looks invalid"; exit 1; }; \
+    file /tmp/idafree_linux.run | grep -q 'ELF .* executable' || { echo "ERROR: IDA Free installer is not an ELF (Wayback returned HTML?)"; exit 1; }; \
+    [ "$(stat -c%s /tmp/idafree_linux.run)" -gt 10000000 ] || { echo "ERROR: IDA Free installer too small"; exit 1; }; \
     chmod +x /tmp/idafree_linux.run; \
     /tmp/idafree_linux.run --mode unattended --prefix /opt/idafree; \
+    [ -x /opt/idafree/ida64 ] || { echo "ERROR: IDA Free ida64 missing after install"; exit 1; }; \
     ln -s /opt/idafree/ida64 /usr/local/bin/ida64; \
     rm /tmp/idafree_linux.run
 
@@ -161,6 +162,7 @@ RUN wget -qO /tmp/binaryninja_free.zip "https://cdn.binary.ninja/installers/bina
     [ -s /tmp/binaryninja_free.zip ] || { echo "ERROR: Binary Ninja download empty"; exit 1; }; \
     unzip -tq /tmp/binaryninja_free.zip || { echo "ERROR: Binary Ninja zip corrupt"; exit 1; }; \
     unzip -q /tmp/binaryninja_free.zip -d /opt; \
+    [ -x /opt/binaryninja/binaryninja ] || { echo "ERROR: Binary Ninja binary missing at /opt/binaryninja/binaryninja (archive layout changed?)"; exit 1; }; \
     ln -s /opt/binaryninja/binaryninja /usr/local/bin/binaryninja; \
     rm /tmp/binaryninja_free.zip
 
@@ -168,13 +170,9 @@ RUN wget -qO /tmp/binaryninja_free.zip "https://cdn.binary.ninja/installers/bina
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     --mount=type=secret,id=github_token \
-    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
-    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/WerWolv/ImHex/releases/latest \
-        | jq -er '.assets[] | select(.name | test("Ubuntu.*24\\.04.*\\.deb$")) | .browser_download_url' | head -1); \
-    [ -n "$url" ] || { echo "ERROR: ImHex asset URL not found"; exit 1; }; \
-    wget -qO /tmp/imhex.deb "$url"; \
-    [ -s /tmp/imhex.deb ] || { echo "ERROR: ImHex download empty"; exit 1; }; \
+    fetch-gh-release.sh WerWolv/ImHex \
+        '.assets[] | select(.name | test("Ubuntu.*24\\.04.*\\.deb$")) | .browser_download_url' \
+        /tmp/imhex.deb; \
     dpkg-deb -I /tmp/imhex.deb >/dev/null || { echo "ERROR: ImHex deb corrupt"; exit 1; }; \
     apt-get update && apt-get install -y --no-install-recommends /tmp/imhex.deb; \
     rm /tmp/imhex.deb
@@ -224,13 +222,9 @@ RUN git clone --depth=1 https://github.com/niklasb/libc-database /opt/libc-datab
 
 # pwninit
 RUN --mount=type=secret,id=github_token \
-    tok=$(cat /run/secrets/github_token 2>/dev/null || true); \
-    curl_auth=(); [ -z "$tok" ] || curl_auth=(-H "Authorization: token ${tok}"); \
-    url=$(curl -fsSL "${curl_auth[@]}" https://api.github.com/repos/io12/pwninit/releases/latest \
-        | jq -er '.assets[] | select(.name == "pwninit") | .browser_download_url' | head -1); \
-    [ -n "$url" ] || { echo "ERROR: pwninit asset URL not found"; exit 1; }; \
-    wget -qO /usr/local/bin/pwninit "$url"; \
-    [ -s /usr/local/bin/pwninit ] || { echo "ERROR: pwninit download empty"; exit 1; }; \
+    fetch-gh-release.sh io12/pwninit \
+        '.assets[] | select(.name == "pwninit") | .browser_download_url' \
+        /usr/local/bin/pwninit; \
     file /usr/local/bin/pwninit | grep -q ELF || { echo "ERROR: pwninit not an ELF"; exit 1; }; \
     chmod +x /usr/local/bin/pwninit
 
@@ -245,18 +239,31 @@ RUN { userdel -r ubuntu 2>/dev/null || true; } \
     && mkdir -p /ctf && chown ctf:ctf /ctf
 
 # MOTD with post-build notes
-RUN echo '\n=== pwndocker-reverse ===\nNote: Run "decomp2dbg --install" for Ghidra/Cutter GDB integration.\nUse "gdb-switch {pwndbg|gef|peda}" to change default GDB plugin.\n' > /etc/motd
+RUN printf '%s\n' \
+        '' \
+        '=== pwndocker-reverse ===' \
+        'Note: install decomp2dbg yourself ("pipx install decomp2dbg && decomp2dbg --install") for Ghidra/Cutter GDB integration.' \
+        'Use "gdb-switch {pwndbg|gef|peda}" to change default GDB plugin.' \
+        '' > /etc/motd
 
-# Layer 12: Config files and helper scripts
-COPY config/zsh_history /home/ctf/.zsh_history
+# Layer 12: GUI launchers
 COPY config/start-cutter.sh config/start-ghidra.sh /usr/local/bin/
-RUN chown ctf:ctf /home/ctf/.zsh_history \
-    && chmod +x /usr/local/bin/start-cutter.sh /usr/local/bin/start-ghidra.sh
+RUN chmod +x /usr/local/bin/start-cutter.sh /usr/local/bin/start-ghidra.sh
+
+# pwndbg's gdbinit.py runs `uv pip install --reinstall` on every launch
+# when the install dir is read-only for the calling user, which prints a
+# scary "Permission denied" error. /opt/pwndbg is owned by root (built in
+# layer 7), so the ctf user always hits this. Disable the auto-update.
+ENV PWNDBG_NO_AUTOUPDATE=1
 
 USER ctf
 
 # oh-my-zsh
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+
+# Pre-populated history (copied AFTER oh-my-zsh install so the installer
+# cannot overwrite it). --chown avoids a separate root chown step.
+COPY --chown=ctf:ctf config/zsh_history /home/ctf/.zsh_history
 
 # Set default GDB plugin to pwndbg
 RUN gdb-switch pwndbg

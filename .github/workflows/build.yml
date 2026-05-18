@@ -32,6 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lint shell scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: config
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -74,6 +79,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Smoke test
+        # Verify tools are present AND actually invokable. A corrupted ELF
+        # would pass `command -v` but fail `--version`; this catches that.
         run: |
           set -euo pipefail
           docker run --rm smoke-test:local bash -c '
@@ -81,11 +88,39 @@ jobs:
             for bin in pwn gdb-pwndbg gdb-gef gdb-peda r2 rizin ghidra \
                        ROPgadget ropper afl-fuzz frida one_gadget \
                        opengrep pwninit cutter ida64 binaryninja \
-                       pycdc jd-gui binwalk; do
+                       pycdc jd-gui binwalk imhex; do
               command -v "$bin" >/dev/null || { echo "MISSING: $bin"; exit 1; }
             done
+            # Functional checks (only quick, non-interactive invocations)
+            r2 -qv >/dev/null
+            rizin -qv >/dev/null
+            opengrep --version >/dev/null
+            pwninit --help >/dev/null
+            one_gadget --version >/dev/null
+            ROPgadget --version >/dev/null
+            # afl-fuzz -h exits non-zero AND grep -q closes the pipe early
+            # (SIGPIPE), so wrap to satisfy `set -eo pipefail`.
+            ( afl-fuzz -h 2>&1 || true ) | grep -qi afl
+            pwn version >/dev/null
+            pwn checksec /bin/ls >/dev/null
+            # pwntools lives in its pipx venv; bare python3 cannot import it.
+            /opt/pipx/venvs/pwntools/bin/python -c "from pwn import *; from capstone import *; from keystone import *; from unicorn import *"
+            # -nx skips ~/.gdbinit so we test gdb itself, not the pwndbg plugin.
+            gdb-multiarch -nx --batch -ex quit >/dev/null
+            # Loads the pwndbg plugin to confirm it imports cleanly.
+            gdb-pwndbg --batch -ex quit >/dev/null
             echo "Smoke test passed"
           '
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: smoke-test:local
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
 
       # Only pushes after smoke test succeeds. Cache hit from build_local means
       # this is near-instant even though build-push-action re-runs buildx.

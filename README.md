@@ -72,7 +72,7 @@ docker buildx imagetools inspect ghcr.io/gl0bal01/pwndocker-reverse:latest --for
 | **Hex Editors** | ImHex, hexedit |
 | **Fuzzing** | AFL++ |
 | **Dynamic** | frida, strace, ltrace, villoc |
-| **Workflow** | libc-database, pwninit, patchelf, binwalk, unblob, upx |
+| **Workflow** | libc-database, patchelf, binwalk, unblob, upx |
 | **Analysis** | binary-refinery, opengrep, hash-identifier |
 | **Networking** | socat, ncat, tcpdump, tshark, nmap |
 | **Editors** | vim, neovim |
@@ -87,7 +87,7 @@ docker buildx imagetools inspect ghcr.io/gl0bal01/pwndocker-reverse:latest --for
 docker run -it --rm --cap-add=SYS_PTRACE -v $(pwd):/ctf pwndocker-reverse
 
 # Analyze the binary
-checksec --file=./challenge
+pwn checksec ./challenge
 file ./challenge
 strings -n 8 ./challenge
 r2 -A ./challenge
@@ -116,7 +116,7 @@ gdb-peda ./binary          # launch with PEDA
 gdb-switch pwndbg          # set default for plain `gdb`
 ```
 
-### GUI tools (Ghidra, IDA, Cutter, Binary Ninja, jd-gui)
+### GUI tools (Ghidra, IDA, Cutter, Binary Ninja, jd-gui, ImHex)
 
 Requires X11 forwarding. On Linux this works natively; on macOS install [XQuartz](https://www.xquartz.org/), on Windows install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) or use WSLg.
 
@@ -132,6 +132,7 @@ ida64 ./binary                 # launch IDA Free
 binaryninja ./binary           # launch Binary Ninja Free
 start-cutter.sh ./binary       # launch Cutter (checks $DISPLAY)
 jd-gui ./app.jar               # launch Java decompiler
+imhex ./binary                 # launch ImHex (hex editor)
 ```
 
 ### Disassemblers (CLI)
@@ -204,6 +205,16 @@ tshark -r capture.pcap                                  # analyze pcap
 
 Hit Ctrl+R and search. 78 commands covering all installed tools are already in your history -- no need to remember syntax.
 
+## Security & Trade-offs
+
+This image is built for **local CTF use**, not for hosting as a shared service. Three deliberate trade-offs to be aware of:
+
+- **Passwordless sudo for `ctf`.** The `ctf` user has `NOPASSWD:ALL` so contestants can `apt-get install` extra packages mid-CTF. There is no privilege boundary inside the container — only the Docker isolation around it. Do **not** expose this container as a network service (e.g., via `socat`/`ncat`) without dropping sudo first.
+- **GDB plugins (pwndbg, GEF, PEDA) and a few other git-cloned tools track the latest default branch.** This keeps the image fresh as CTF tooling evolves; the **weekly CI rebuild + smoke test** catches upstream breakage. The remaining risk is a malicious upstream commit shipping straight into a rebuild — pin a specific image digest (see *Reproducibility & Verification* above) if that's a concern.
+- **IDA Free is fetched from a Wayback Machine snapshot** because Hex-Rays removed v8.4 from their CDN. The build validates that the downloaded blob is an ELF executable of plausible size, but cannot SHA-pin without access to the original asset. If the snapshot ever disappears the build fails loudly rather than silently producing a broken image.
+
+CI runs **Trivy** against every build (fails on HIGH/CRITICAL OS/library CVEs with fixes available) and **shellcheck** on every shipped shell script, so regressions in either dimension block the push.
+
 ## Project Structure
 
 ```
@@ -213,6 +224,8 @@ config/
   gdb-gef                # GDB launcher (GEF)
   gdb-peda               # GDB launcher (PEDA)
   gdb-switch             # Set default GDB plugin
+  gdbinit                # Shared GDB plugin init (loaded by wrappers)
+  fetch-gh-release.sh    # GitHub release asset fetcher (shared in Dockerfile)
   jd-gui                 # java -jar wrapper
   start-cutter.sh        # GUI launcher with $DISPLAY check
   start-ghidra.sh        # GUI launcher with $DISPLAY check

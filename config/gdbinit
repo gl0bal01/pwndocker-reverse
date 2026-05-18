@@ -1,3 +1,4 @@
+# GDB plugin init — each define loads one plugin on demand via init-<name>.
 define init-pwndbg
   source /opt/pwndbg/gdbinit.py
 end
