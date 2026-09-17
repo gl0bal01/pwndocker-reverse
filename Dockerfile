@@ -252,6 +252,53 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && command -v flatter \
     && flatter -h >/dev/null 2>&1
 
+# Layer 10b: DFIR / blue team
+#
+# Added for HTB Holmes-class events: the 2025 edition ran five challenges, three of
+# them Windows-artifact or memory forensics, and this image had none of it. Package
+# names verified in a clean ubuntu:24.04 on 2026-09-17 — `bulk-extractor` is NOT in
+# the 24.04 repos and one bad name aborts the whole apt stage, so it is deliberately
+# absent; foremost and the existing binwalk cover carving.
+#
+# The libyal utils (evtxexport, regfexport, esedbexport) parse EVTX, registry hives
+# and ESE databases (SRUM, NTDS) natively, which is why no dotnet runtime and no
+# Zimmerman tools are pulled in. Add them only if a challenge needs their specific
+# output format.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        libimage-exiftool-perl sleuthkit libparse-win32registry-perl \
+        john john-data hashcat foremost \
+        libesedb-utils libevtx-utils libregf-utils libscca-utils libbde-utils pff-tools
+
+# DFIR python tooling (pipx, same layout as Layer 2 so the ctf user gets them)
+RUN pipx install volatility3 \
+    && pipx install flare-capa \
+    && pipx install oletools \
+    && pipx install impacket \
+    && command -v vol >/dev/null \
+    && command -v capa >/dev/null
+
+# chainsaw (EVTX hunting with Sigma rules) — the most-cited tool in the 2025 writeups
+RUN --mount=type=secret,id=github_token \
+    fetch-gh-release.sh WithSecureOpenSource/chainsaw \
+        '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu.tar.gz")) | .browser_download_url' \
+        /tmp/chainsaw.tar.gz \
+    && tar xzf /tmp/chainsaw.tar.gz -C /opt \
+    && ln -sf "$(find /opt -name chainsaw -type f -executable | head -1)" /usr/local/bin/chainsaw \
+    && rm -f /tmp/chainsaw.tar.gz \
+    && chainsaw --version
+
+# RegRipper (registry plugins; perl, not packaged)
+RUN git clone --depth=1 https://github.com/keydet89/RegRipper4.0 /opt/regripper \
+    && printf '#!/bin/sh\nexec perl /opt/regripper/rip.pl "$@"\n' > /usr/local/bin/rip \
+    && chmod +x /usr/local/bin/rip
+
+# vol-analyze (gl0bal01/volatility-toolkit) — drives volatility3 across a whole dump
+RUN git clone --depth=1 https://github.com/gl0bal01/volatility-toolkit /opt/volatility-toolkit \
+    && ln -sf /opt/volatility-toolkit/scripts/vol-analyze.sh /usr/local/bin/vol-analyze \
+    && chmod +x /opt/volatility-toolkit/scripts/vol-analyze.sh
+
 # Layer 11: User Setup & Shell
 ARG CTF_UID=1000
 ARG CTF_GID=1000
