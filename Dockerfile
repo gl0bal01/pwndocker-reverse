@@ -228,6 +228,30 @@ RUN --mount=type=secret,id=github_token \
     file /usr/local/bin/pwninit | grep -q ELF || { echo "ERROR: pwninit not an ELF"; exit 1; }; \
     chmod +x /usr/local/bin/pwninit
 
+# flatter (fast lattice reduction — faster than fpylll's LLL/BKZ on large bases)
+#
+# Built here rather than mid-event: during PwnSec 26 an agent cloned flatter and
+# ran cmake, the build never completed, and no binary was ever produced. Crypto
+# agents were then briefed that flatter was available when it was not. The cost is
+# paid once, off the clock, instead of failing when minutes matter.
+#
+# Build verified in a clean ubuntu:24.04 on 2026-09-17. libopenblas-dev is NOT
+# optional: without BLAS/LAPACK cmake fails at src/CMakeLists.txt:10, which is the
+# kind of missing dep that kills a mid-event build. Input is fplll matrix syntax
+# ([[1 0]\n[0 1]]), not comma-separated.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        cmake libgmp-dev libmpfr-dev libeigen3-dev libfplll-dev libopenblas-dev \
+    && git clone --depth=1 https://github.com/keeganryan/flatter /tmp/flatter \
+    && cmake -S /tmp/flatter -B /tmp/flatter/build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build /tmp/flatter/build -j"$(nproc)" \
+    && cmake --install /tmp/flatter/build \
+    && ldconfig \
+    && rm -rf /tmp/flatter \
+    && command -v flatter \
+    && flatter -h >/dev/null 2>&1
+
 # Layer 11: User Setup & Shell
 ARG CTF_UID=1000
 ARG CTF_GID=1000
