@@ -299,6 +299,20 @@ RUN git clone --depth=1 https://github.com/gl0bal01/volatility-toolkit /opt/vola
     && ln -sf /opt/volatility-toolkit/scripts/vol-analyze.sh /usr/local/bin/vol-analyze \
     && chmod +x /opt/volatility-toolkit/scripts/vol-analyze.sh
 
+# Layer 10c: REA (Ghidra driven from a CLI)
+#
+# `rea` (npm rea-agents) imports a binary into headless Ghidra and exposes search,
+# xrefs, decompile and read-bytes as shell commands. Used as a CLI only, never as an
+# MCP server. Node comes from the official tarball (not apt: 24.04 ships Node 18);
+# both versions are pinned. Verified 2026-10-18 against Ghidra 12.1.2 + JDK 21.
+ARG NODE_VERSION=22.23.2
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      | tar -xJ -C /usr/local --strip-components=1 \
+    && npm install --global rea-agents@6.7.0 \
+    && npm cache clean --force \
+    && command -v rea >/dev/null
+ENV GHIDRA_INSTALL_DIR=/opt/ghidra
+
 # Layer 11: User Setup & Shell
 ARG CTF_UID=1000
 ARG CTF_GID=1000

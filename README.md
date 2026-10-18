@@ -67,7 +67,7 @@ docker buildx imagetools inspect ghcr.io/gl0bal01/pwndocker-reverse:latest --for
 |---|---|
 | **Exploit Dev** | pwntools, angr, ROPgadget, ropper, one_gadget, seccomp-tools, qiling, pwninit |
 | **Libraries** | capstone, keystone, unicorn, z3, yara, r2pipe *(in pwntools venv)* |
-| **Disassemblers / Decompilers** | Ghidra, IDA Free, Binary Ninja Free, Cutter (rizin), retdec, radare2, rizin, pycdc, jd-gui |
+| **Disassemblers / Decompilers** | Ghidra (+ `rea` CLI, rea-agents 6.7.0, headless Ghidra from the shell), IDA Free, Binary Ninja Free, Cutter (rizin), retdec, radare2, rizin, pycdc, jd-gui |
 | **GDB** | pwndbg, GEF, PEDA + switcher scripts |
 | **Hex Editors** | ImHex, hexedit |
 | **Fuzzing** | AFL++ |
