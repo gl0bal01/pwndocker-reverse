@@ -306,9 +306,15 @@ RUN git clone --depth=1 https://github.com/gl0bal01/volatility-toolkit /opt/vola
 # MCP server. Node comes from the official tarball (not apt: 24.04 ships Node 18);
 # both versions are pinned. Verified 2026-10-18 against Ghidra 12.1.2 + JDK 21.
 ARG NODE_VERSION=22.23.2
-RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-      | tar -xJ -C /usr/local --strip-components=1 \
-    && npm install --global rea-agents@6.7.0 \
+# SHA-256 from https://nodejs.org/dist/v22.23.2/SHASUMS256.txt (node-v22.23.2-linux-x64.tar.xz)
+ARG NODE_SHA256=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307
+# --ignore-scripts: no lifecycle script of rea-agents or its (unpinned) transitive deps runs as
+# root. rea needs none of them; the build proves it (command -v rea, and doctor --rea smoke).
+RUN curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
+    && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+    && rm /tmp/node.tar.xz \
+    && npm install --global --ignore-scripts rea-agents@6.7.0 \
     && npm cache clean --force \
     && command -v rea >/dev/null
 ENV GHIDRA_INSTALL_DIR=/opt/ghidra
