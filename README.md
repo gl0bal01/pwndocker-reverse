@@ -215,6 +215,8 @@ This image is built for **local CTF use**, not for hosting as a shared service. 
 
 CI runs **Trivy** against every build (fails on CRITICAL OS CVEs with a known fix) and **shellcheck** on every shipped shell script, so regressions in either dimension block the push. The Trivy gate is narrow on purpose — see `.github/workflows/build.yml` for the rationale.
 
+`scripts/ci-local.sh` mirrors those CI steps locally (shellcheck, build, smoke test, Trivy via the pinned container; push/sign steps are reported as SKIPPED). `scripts/install-hooks.sh` wires it to a `pre-push` hook; bypass with `SKIP_CI_LOCAL=1 git push`.
+
 ## Project Structure
 
 ```
