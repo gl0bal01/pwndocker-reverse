@@ -125,6 +125,7 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL
           vuln-type: os
+          timeout: 30m
 
       # Only pushes after smoke test succeeds. Cache hit from build_local means
       # this is near-instant even though build-push-action re-runs buildx.
